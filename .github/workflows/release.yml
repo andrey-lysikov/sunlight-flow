@@ -1,0 +1,90 @@
+name: release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Decide whether to release
+        id: check
+        shell: pwsh
+        run: |
+          $version = ([xml](Get-Content 'src\Sunlight-Flow.csproj')).Project.PropertyGroup.Version |
+                     Where-Object { $_ } | Select-Object -First 1
+          if (-not $version) { throw 'no <Version> in the project file' }
+
+          $tag = "v$version"
+          if (git tag --list $tag) {
+            Write-Host "$tag already released"
+            "release=false" >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+
+          $changelog = Get-Content 'changelog.md' -Raw
+          $pattern = '(?ms)^##\s+' + [regex]::Escape($version) + '\s*$(.*?)(?=^##\s|\z)'
+          $match = [regex]::Match($changelog, $pattern)
+          if (-not $match.Success) { throw "changelog.md has no section for $version" }
+
+          $notes = $match.Groups[1].Value.Trim()
+          Set-Content 'release-notes.md' $notes -Encoding utf8
+
+          "release=true"       >> $env:GITHUB_OUTPUT
+          "version=$version"   >> $env:GITHUB_OUTPUT
+          "tag=$tag"           >> $env:GITHUB_OUTPUT
+          Write-Host "releasing $tag"
+
+      - name: Import the signing certificate
+        if: steps.check.outputs.release == 'true'
+        shell: pwsh
+        env:
+          SIGNING_PFX: ${{ secrets.SIGNING_PFX }}
+          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
+        run: |
+          if (-not $env:SIGNING_PFX) {
+            Write-Host 'no SIGNING_PFX secret, build.ps1 will create a self-signed certificate'
+            exit 0
+          }
+
+          $bytes = [Convert]::FromBase64String($env:SIGNING_PFX)
+          $path = Join-Path $env:RUNNER_TEMP 'signing.pfx'
+          [IO.File]::WriteAllBytes($path, $bytes)
+          $password = ConvertTo-SecureString $env:SIGNING_PASSWORD -AsPlainText -Force
+          Import-PfxCertificate -FilePath $path -CertStoreLocation Cert:\CurrentUser\My -Password $password | Out-Null
+          Remove-Item $path -Force
+
+      - name: Build the installer
+        if: steps.check.outputs.release == 'true'
+        shell: pwsh
+        env:
+          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
+        run: |
+          if ($env:SIGNING_PASSWORD) { ./build.ps1 -CertPassword $env:SIGNING_PASSWORD }
+          else { ./build.ps1 }
+
+      - name: Publish the release
+        if: steps.check.outputs.release == 'true'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create ${{ steps.check.outputs.tag }} `
+            'build/Sunlight-Flow.msi' `
+            'build/Sunlight-Flow.cer' `
+            --title 'Sunlight-Flow ${{ steps.check.outputs.version }}' `
+            --notes-file 'release-notes.md'

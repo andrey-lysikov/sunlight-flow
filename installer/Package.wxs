@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+
+  <Package Name="Sunlight-Flow"
+           Manufacturer="$(Manufacturer)"
+           Version="$(Version)"
+           UpgradeCode="3F6AA386-2CA7-4C67-B46F-9F769BD8E510"
+           Scope="perMachine"
+           Compressed="yes"
+           Language="1033"
+           Codepage="1252">
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Sunlight-Flow is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Property Id="WINDOWSBUILDNUMBER" Secure="yes">
+      <RegistrySearch Id="WindowsBuildNumber"
+                      Root="HKLM"
+                      Key="SOFTWARE\Microsoft\Windows NT\CurrentVersion"
+                      Name="CurrentBuildNumber"
+                      Type="raw" />
+    </Property>
+
+    <Launch Condition="Installed OR (VersionNT64 AND WINDOWSBUILDNUMBER &gt;= 22000)"
+            Message="Requires 64-bit Windows 11 build 22000 or newer." />
+
+    <Icon Id="AppIcon" SourceFile="$(Icon)" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/andrey-lysikov/sunlight-flow" />
+
+    <WixVariable Id="WixUILicenseRtf" Value="$(License)" />
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="INSTALLFOLDER" Name="Sunlight-Flow" />
+    </StandardDirectory>
+
+    <ComponentGroup Id="PackagePayload" Directory="INSTALLFOLDER">
+      <Component Id="MsixPackage" Guid="C1CCD2DE-9349-4A53-AE36-1C5B31B619A7">
+        <File Id="MsixFile" Source="$(Msix)" Name="Sunlight-Flow.msix" KeyPath="yes" />
+      </Component>
+      <Component Id="SigningCertificate" Guid="FEB4600F-6B7F-44B1-8D79-3D99F941D9B3">
+        <File Id="CerFile" Source="$(Certificate)" Name="Sunlight-Flow.cer" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <Feature Id="Main" Title="Sunlight-Flow" Level="1">
+      <ComponentGroupRef Id="PackagePayload" />
+    </Feature>
+
+    <SetProperty Id="TrustCertificate"
+                 Value="&quot;[System64Folder]certutil.exe&quot; -f -addstore TrustedPeople &quot;[INSTALLFOLDER]Sunlight-Flow.cer&quot;"
+                 Before="TrustCertificate"
+                 Sequence="execute" />
+
+    <SetProperty Id="ForgetCertificate"
+                 Value="&quot;[System64Folder]certutil.exe&quot; -delstore TrustedPeople &quot;lysnet.ru&quot;"
+                 Before="ForgetCertificate"
+                 Sequence="execute" />
+
+    <SetProperty Id="RegisterPackage"
+                 Value="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command &quot;Add-AppxPackage -Path '[INSTALLFOLDER]Sunlight-Flow.msix' -ForceUpdateFromAnyVersion; $pkg = Get-AppxPackage -Name SunlightFlow; Start-Process ('shell:AppsFolder\' + $pkg.PackageFamilyName + '!App')&quot;"
+                 Before="RegisterPackage"
+                 Sequence="execute" />
+
+    <SetProperty Id="UnregisterPackage"
+                 Value="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command &quot;Get-AppxPackage -Name SunlightFlow | Remove-AppxPackage&quot;"
+                 Before="UnregisterPackage"
+                 Sequence="execute" />
+
+    <CustomAction Id="TrustCertificate" BinaryRef="Wix4UtilCA_X64" DllEntry="WixQuietExec64"
+                  Execute="deferred" Impersonate="no" Return="check" />
+
+    <CustomAction Id="RegisterPackage" BinaryRef="Wix4UtilCA_X64" DllEntry="WixQuietExec64"
+                  Execute="deferred" Impersonate="yes" Return="check" />
+
+    <CustomAction Id="UnregisterPackage" BinaryRef="Wix4UtilCA_X64" DllEntry="WixQuietExec64"
+                  Execute="deferred" Impersonate="yes" Return="ignore" />
+
+    <CustomAction Id="ForgetCertificate" BinaryRef="Wix4UtilCA_X64" DllEntry="WixQuietExec64"
+                  Execute="deferred" Impersonate="no" Return="ignore" />
+
+    <InstallExecuteSequence>
+      <Custom Action="UnregisterPackage" Before="RemoveFiles" Condition="REMOVE=&quot;ALL&quot;" />
+      <Custom Action="ForgetCertificate" After="UnregisterPackage" Condition="REMOVE=&quot;ALL&quot;" />
+      <Custom Action="TrustCertificate" After="InstallFiles" Condition="NOT Installed" />
+      <Custom Action="RegisterPackage" After="TrustCertificate" Condition="NOT Installed" />
+    </InstallExecuteSequence>
+
+    <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
+    <UIRef Id="WixUI_ErrorProgressText" />
+
+  </Package>
+</Wix>

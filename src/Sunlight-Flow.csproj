@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Tray app: no console needed. -->
+    <OutputType>WinExe</OutputType>
+
+    <!-- 26100 is mandatory: LampArray.IsAvailable and AvailabilityChanged
+         only appeared in that version of the Windows SDK. -->
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.22621.0</TargetPlatformMinVersion>
+
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <Platforms>x64</Platforms>
+    <SelfContained>false</SelfContained>
+
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWindowsForms>true</UseWindowsForms>
+
+    <RootNamespace>SunlightFlow</RootNamespace>
+    <AssemblyName>Sunlight-Flow</AssemblyName>
+    <ApplicationIcon>sun.ico</ApplicationIcon>
+
+    <!-- Two-part version. MSIX wants four, build.ps1 pads the rest, so this
+         number and the one in changelog.md stay the same. -->
+    <Version>1.0</Version>
+    <AssemblyVersion>1.0</AssemblyVersion>
+    <FileVersion>1.0</FileVersion>
+
+    <Product>Sunlight-Flow</Product>
+    <Company>lysnet.ru</Company>
+    <Authors>Andrey.Lysikov and Claude</Authors>
+    <Copyright>© Andrey Lysikov, Apache 2.0 licence.</Copyright>
+    <Description>Motherboard lighting driven by sun elevation: off by day, ramping up towards sunset.</Description>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The tray glyph is drawn at runtime; sun.ico only serves the exe and
+         the package logos built from it. -->
+    <None Include="sun.ico" />
+
+    <!-- One sample config serves both the repository and the first run. -->
+    <EmbeddedResource Include="..\sample.conf" LogicalName="sample.conf" />
+  </ItemGroup>
+
+</Project>

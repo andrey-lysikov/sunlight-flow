@@ -1,0 +1,38 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Compile
+        shell: pwsh
+        run: dotnet build src\Sunlight-Flow.csproj -c Release --nologo
+
+      - name: Package and build the installer
+        shell: pwsh
+        run: ./build.ps1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Sunlight-Flow
+          path: |
+            build/Sunlight-Flow.msi
+            build/Sunlight-Flow.msix
+            build/Sunlight-Flow.cer
+          retention-days: 14

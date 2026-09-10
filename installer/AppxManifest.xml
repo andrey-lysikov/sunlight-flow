@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  Package identity is here for background lighting control, not for the Store:
+  AmbientLightingServer only accepts connections from processes that have package
+  identity and declare the com.microsoft.windows.lighting extension. Without a
+  package LampArray.IsAvailable is always false.
+
+  Publisher must match the signing certificate subject character for character.
+
+  Version is a placeholder: build.ps1 substitutes the version from the csproj,
+  padded to the four parts the package schema requires.
+-->
+
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
+  xmlns:uap5="http://schemas.microsoft.com/appx/manifest/uap/windows10/5"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap uap3 uap5 rescap">
+
+  <Identity
+    Name="SunlightFlow"
+    Publisher="CN=lysnet.ru"
+    Version="0.0.0.0"
+    ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>Sunlight-Flow</DisplayName>
+    <PublisherDisplayName>lysnet.ru</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+  </Properties>
+
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.22621.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="en-US" />
+  </Resources>
+
+  <Applications>
+    <Application Id="App" Executable="Sunlight-Flow.exe" EntryPoint="Windows.FullTrustApplication">
+
+      <uap:VisualElements
+        DisplayName="Sunlight-Flow"
+        Description="Motherboard lighting driven by sun elevation"
+        BackgroundColor="transparent"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png"
+        AppListEntry="default" />
+
+      <Extensions>
+
+        <!-- The whole reason for packaging: this extension puts the app into the
+             background lighting control list in Settings. -->
+        <uap3:Extension Category="windows.appExtension">
+          <uap3:AppExtension
+            Name="com.microsoft.windows.lighting"
+            Id="SunlightFlow"
+            PublicFolder="Public"
+            DisplayName="Sunlight-Flow" />
+        </uap3:Extension>
+
+        <!-- Autostart: a packaged app changes its exe path on update,
+             so HKCU\Run will not do. -->
+        <uap5:Extension
+          Category="windows.startupTask"
+          Executable="Sunlight-Flow.exe"
+          EntryPoint="Windows.FullTrustApplication">
+          <uap5:StartupTask
+            TaskId="SunlightFlowAutoStart"
+            Enabled="false"
+            DisplayName="Sunlight-Flow" />
+        </uap5:Extension>
+
+      </Extensions>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+
+</Package>
