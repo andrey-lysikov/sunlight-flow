@@ -10,6 +10,7 @@ internal sealed record AppConfig(
     double SunLowDegrees = -6.0,    // below it brightness reaches the ceiling
     double MaxBrightness = 1.0,     // ceiling the lighting ramps up to at night
     double Gamma = 2.2,             // the eye perceives brightness non-linearly
+    double VisibleFrom = 0.15,      // lower levels are invisible and count as zero
     bool UseWeather = true,         // cloud cover through Open-Meteo
     string Color = "#0078FF",
     string TimeZone = "Auto",       // zone the longitude is derived from
@@ -58,6 +59,7 @@ internal sealed record AppConfig(
             SunLowDegrees: ini.Double("General", "FullBelow", d.SunLowDegrees),
             MaxBrightness: ini.Double("General", "BaseBrightness", 100.0) / 100.0,
             Gamma: ini.Double("General", "Gamma", d.Gamma),
+            VisibleFrom: ini.Double("General", "VisibleFrom", d.VisibleFrom * 100.0) / 100.0,
             UseWeather: ini.Bool("General", "WeatherCloud", d.UseWeather),
             Color: ini.String("General", "BaseColor", d.Color),
             TimeZone: ini.String("General", "TimeZone", d.TimeZone),
@@ -111,6 +113,7 @@ internal sealed record AppConfig(
             SunLowDegrees = low,
             MaxBrightness = Math.Clamp(MaxBrightness, 0, 1),
             Gamma = Gamma > 0.1 ? Gamma : 2.2,
+            VisibleFrom = Math.Clamp(VisibleFrom, 0, 1),
             Color = ColorMath.IsValid(Color) ? Color : ColorMath.DefaultHex,
             BusyColor = ColorMath.IsValid(BusyColor) ? BusyColor : ColorMath.DefaultBusyHex,
 

@@ -44,7 +44,8 @@ internal static class Sun
 }
 
 // Zero by day, rising towards MaxBrightness as the sun sets. Cloud cover adds
-// on top: an overcast evening goes dark earlier than the sun alone suggests.
+// on top once the sun is below DimAbove: an overcast evening goes dark earlier
+// than the sun alone suggests, an overcast day stays dark.
 internal sealed class LevelCalculator
 {
     private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(10) };
@@ -102,14 +103,21 @@ internal sealed class LevelCalculator
         double sun = SmoothStep((cfg.SunHighDegrees - elevation) / (cfg.SunHighDegrees - cfg.SunLowDegrees));
         LastSunFactor = sun;
 
-        double cloud = await CloudFactorAsync(cfg, loc);
+        // Clouds only add brightness and never stand in for the sun: while the sun
+        // is above DimAbove an overcast sky needs no lighting. Below it their share
+        // comes in over the upper half of the band, so there is no step at the edge.
+        double band = cfg.SunHighDegrees - cfg.SunLowDegrees;
+        double cloudWeight = SmoothStep((cfg.SunHighDegrees - elevation) / (band / 2));
+        double cloud = cloudWeight > 0 ? await CloudFactorAsync(cfg, loc) : 0.0;
 
-        // Clouds only add brightness and never stand in for the sun: an overcast
-        // noon still needs no lighting.
-        double level = sun + (1.0 - sun) * cloud * 0.6;
+        double level = sun + (1.0 - sun) * cloud * cloudWeight * 0.6;
 
         // Perceived brightness, the same scale the config speaks in. Gamma is
         // applied later, on the way to the hardware.
-        return Math.Clamp(level * cfg.MaxBrightness, 0, 1);
+        level = Math.Clamp(level * cfg.MaxBrightness, 0, 1);
+
+        // Below this the LEDs show nothing at all, so the lamps are simply dark.
+        // The step to the first visible level is still faded by the engine.
+        return level < cfg.VisibleFrom ? 0.0 : level;
     }
 }

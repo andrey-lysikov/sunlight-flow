@@ -499,8 +499,9 @@ internal sealed class LightEngine : IAsyncDisposable
             Diagnostics.Log($"reached {_fadeTo:F3} in {(DateTime.UtcNow - _fadeStart).TotalSeconds:F1} s");
         }
 
-        // Eased so the ramp starts and ends gently instead of snapping into place.
-        double eased = t * t * (3 - 2 * t);
+        // Eased in: the change starts barely noticeable and gathers pace towards
+        // the end, both when the light comes up and when it goes down.
+        double eased = t * t * t;
 
         _displayLevel = Math.Clamp(_fadeFrom + (_fadeTo - _fadeFrom) * eased, 0.0, 1.0);
         StateChanged?.Invoke();
