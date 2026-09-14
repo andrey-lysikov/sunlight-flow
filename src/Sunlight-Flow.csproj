@@ -23,9 +23,9 @@
 
     <!-- Two-part version. MSIX wants four, build.ps1 pads the rest, so this
          number and the one in changelog.md stay the same. -->
-    <Version>1.0</Version>
-    <AssemblyVersion>1.0</AssemblyVersion>
-    <FileVersion>1.0</FileVersion>
+    <Version>1.1</Version>
+    <AssemblyVersion>1.1</AssemblyVersion>
+    <FileVersion>1.1</FileVersion>
 
     <Product>Sunlight-Flow</Product>
     <Company>lysnet.ru</Company>

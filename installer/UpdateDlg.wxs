@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+
+  <!-- Shown instead of Welcome, License and InstallDir when an installed copy is
+       found: an update asks nothing, it only confirms. Fonts and the bitmap come
+       from the WixUI_InstallDir set the package already uses. -->
+  <Fragment>
+    <UI>
+      <Dialog Id="UpdateDlg" Width="370" Height="270" Title="!(loc.WelcomeDlg_Title)">
+        <Control Id="Bitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="234"
+                 TabSkip="no" Text="!(loc.WelcomeDlgBitmap)" />
+        <Control Id="Title" Type="Text" X="135" Y="20" Width="220" Height="60"
+                 Transparent="yes" NoPrefix="yes"
+                 Text="{\WixUI_Font_Bigger}Update [ProductName]" />
+        <Control Id="Description" Type="Text" X="135" Y="80" Width="220" Height="90"
+                 Transparent="yes" NoPrefix="yes"
+                 Text="[ProductName] is already installed. Setup will update it to version [ProductVersion].&#13;&#10;&#13;&#10;The running app will be closed and started again when the update finishes. Your settings are kept.&#13;&#10;&#13;&#10;Click Update to continue or Cancel to exit." />
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+        <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17"
+                 Disabled="yes" Text="!(loc.WixUIBack)" />
+        <Control Id="Update" Type="PushButton" X="236" Y="243" Width="56" Height="17"
+                 Default="yes" ElevationShield="yes" Text="&amp;Update">
+          <Publish Event="EndDialog" Value="Return" />
+        </Control>
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17"
+                 Cancel="yes" Text="!(loc.WixUICancel)">
+          <Publish Event="SpawnDialog" Value="CancelDlg" />
+        </Control>
+      </Dialog>
+    </UI>
+  </Fragment>
+</Wix>

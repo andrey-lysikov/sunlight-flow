@@ -84,7 +84,8 @@ if (Test-Path $msi) { Remove-Item $msi -Force }
     -d "Icon=$icon" `
     -d "License=$license" `
     -o $msi `
-    (Join-Path $PSScriptRoot 'Package.wxs')
+    (Join-Path $PSScriptRoot 'Package.wxs') `
+    (Join-Path $PSScriptRoot 'UpdateDlg.wxs')
 
 if ($LASTEXITCODE -ne 0) { throw "wix build exited with code $LASTEXITCODE" }
 

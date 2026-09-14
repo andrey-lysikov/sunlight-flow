@@ -48,6 +48,37 @@
       <ComponentGroupRef Id="PackagePayload" />
     </Feature>
 
+    <!-- Update mode. Worked out before the first dialog and in both sequences,
+         because the UI and the execution run in separate processes. -->
+    <Property Id="PERUSERCOPY" Secure="yes">
+      <DirectorySearch Id="PerUserFolderSearch" Path="[LocalAppDataFolder]Sunlight-Flow">
+        <FileSearch Id="PerUserMsixSearch" Name="Sunlight-Flow.msix" />
+      </DirectorySearch>
+    </Property>
+
+    <SetProperty Action="SetUpdateMode" Id="UPDATEMODE" Value="1" After="AppSearch" Sequence="both"
+                 Condition="NOT Installed AND (WIX_UPGRADE_DETECTED OR PERUSERCOPY)" />
+
+    <!-- In WiX 6 both start dialogs are virtual, so update mode simply takes them
+         out of the sequence and shows UpdateDlg in their place. -->
+    <InstallUISequence>
+      <Show Dialog="override WelcomeDlg" Before="ProgressDlg"
+            Condition="(NOT Installed OR PATCH) AND NOT UPDATEMODE" />
+      <Show Dialog="override MaintenanceWelcomeDlg" Before="ProgressDlg"
+            Condition="Installed AND NOT RESUME AND NOT Preselected AND NOT PATCH AND NOT UPDATEMODE" />
+      <Show Dialog="UpdateDlg" Before="ProgressDlg" Condition="UPDATEMODE AND NOT Installed" />
+    </InstallUISequence>
+
+    <!-- Immediate on purpose: a deferred action ahead of RemoveExistingProducts
+         fails with 2613. Add-AppxPackage refuses to replace a running app, and
+         Wait-Process covers the gap before the process lets go of its files. -->
+    <SetProperty Action="SetStopApp" Id="WixQuietExecCmdLine" Sequence="execute" Before="StopApp"
+                 Condition="UPDATEMODE AND NOT REMOVE~=&quot;ALL&quot;"
+                 Value="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command &quot;Stop-Process -Name Sunlight-Flow -Force -ErrorAction SilentlyContinue; Wait-Process -Name Sunlight-Flow -Timeout 15 -ErrorAction SilentlyContinue; exit 0&quot;" />
+
+    <CustomAction Id="StopApp" BinaryRef="Wix4UtilCA_X64" DllEntry="WixQuietExec"
+                  Execute="immediate" Return="ignore" />
+
     <SetProperty Id="TrustCertificate"
                  Value="&quot;[System64Folder]certutil.exe&quot; -f -addstore TrustedPeople &quot;[INSTALLFOLDER]Sunlight-Flow.cer&quot;"
                  Before="TrustCertificate"
@@ -59,7 +90,7 @@
                  Sequence="execute" />
 
     <SetProperty Id="RegisterPackage"
-                 Value="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command &quot;Add-AppxPackage -Path '[INSTALLFOLDER]Sunlight-Flow.msix' -ForceUpdateFromAnyVersion; $pkg = Get-AppxPackage -Name SunlightFlow; Start-Process ('shell:AppsFolder\' + $pkg.PackageFamilyName + '!App')&quot;"
+                 Value="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command &quot;Add-AppxPackage -Path '[INSTALLFOLDER]Sunlight-Flow.msix' -ForceUpdateFromAnyVersion -ForceApplicationShutdown; $pkg = Get-AppxPackage -Name SunlightFlow; Start-Process ('shell:AppsFolder\' + $pkg.PackageFamilyName + '!App')&quot;"
                  Before="RegisterPackage"
                  Sequence="execute" />
 
@@ -80,9 +111,13 @@
     <CustomAction Id="ForgetCertificate" BinaryRef="Wix4UtilCA_X64" DllEntry="WixQuietExec64"
                   Execute="deferred" Impersonate="no" Return="ignore" />
 
+    <!-- When the old version is removed by an upgrade, the app package and the
+         certificate stay: the new version updates the package in place, so the
+         startup setting and the lighting permission in Settings survive. -->
     <InstallExecuteSequence>
-      <Custom Action="UnregisterPackage" Before="RemoveFiles" Condition="REMOVE=&quot;ALL&quot;" />
-      <Custom Action="ForgetCertificate" After="UnregisterPackage" Condition="REMOVE=&quot;ALL&quot;" />
+      <Custom Action="StopApp" Before="RemoveExistingProducts" Condition="UPDATEMODE AND NOT REMOVE~=&quot;ALL&quot;" />
+      <Custom Action="UnregisterPackage" Before="RemoveFiles" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+      <Custom Action="ForgetCertificate" After="UnregisterPackage" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
       <Custom Action="TrustCertificate" After="InstallFiles" Condition="NOT Installed" />
       <Custom Action="RegisterPackage" After="TrustCertificate" Condition="NOT Installed" />
     </InstallExecuteSequence>

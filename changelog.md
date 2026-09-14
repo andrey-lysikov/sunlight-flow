@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1
+* Update sunlight calculation
+* Update installer and updater
+
 ## 1.0
 
 First release.
