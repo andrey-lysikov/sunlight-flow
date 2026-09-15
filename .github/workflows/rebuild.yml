@@ -1,4 +1,4 @@
-name: build
+name: rebuild
 
 on:
   push:
@@ -9,8 +9,11 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
-  build:
+  rebuild:
     runs-on: windows-latest
 
     steps:
@@ -24,9 +27,34 @@ jobs:
         shell: pwsh
         run: dotnet build src\Sunlight-Flow.csproj -c Release --nologo
 
+      # A manual run replaces the installer in the release of the current version,
+      # so it has to be signed with the same certificate as the release itself.
+      - name: Import the signing certificate
+        if: github.event_name == 'workflow_dispatch'
+        shell: pwsh
+        env:
+          SIGNING_PFX: ${{ secrets.SIGNING_PFX }}
+          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
+        run: |
+          if (-not $env:SIGNING_PFX) {
+            Write-Host 'no SIGNING_PFX secret, build.ps1 will create a self-signed certificate'
+            exit 0
+          }
+
+          $bytes = [Convert]::FromBase64String($env:SIGNING_PFX)
+          $path = Join-Path $env:RUNNER_TEMP 'signing.pfx'
+          [IO.File]::WriteAllBytes($path, $bytes)
+          $password = ConvertTo-SecureString $env:SIGNING_PASSWORD -AsPlainText -Force
+          Import-PfxCertificate -FilePath $path -CertStoreLocation Cert:\CurrentUser\My -Password $password | Out-Null
+          Remove-Item $path -Force
+
       - name: Package and build the installer
         shell: pwsh
-        run: ./build.ps1
+        env:
+          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
+        run: |
+          if ($env:SIGNING_PASSWORD) { ./build.ps1 -CertPassword $env:SIGNING_PASSWORD }
+          else { ./build.ps1 }
 
       - uses: actions/upload-artifact@v4
         with:
@@ -36,3 +64,22 @@ jobs:
             build/Sunlight-Flow.msix
             build/Sunlight-Flow.cer
           retention-days: 14
+
+      - name: Replace the installer in the release
+        if: github.event_name == 'workflow_dispatch'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = ([xml](Get-Content 'src\Sunlight-Flow.csproj')).Project.PropertyGroup.Version |
+                     Where-Object { $_ } | Select-Object -First 1
+          if (-not $version) { throw 'no <Version> in the project file' }
+
+          $tag = "v$version"
+          gh release view $tag --json tagName | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "release $tag does not exist yet, the release workflow creates it" }
+
+          gh release upload $tag 'build/Sunlight-Flow.msi' 'build/Sunlight-Flow.cer' --clobber
+          if ($LASTEXITCODE -ne 0) { throw "could not upload to $tag" }
+
+          Write-Host "installer in $tag replaced"
