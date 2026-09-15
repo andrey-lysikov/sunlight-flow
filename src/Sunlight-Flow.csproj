@@ -21,12 +21,15 @@
     <AssemblyName>Sunlight-Flow</AssemblyName>
     <ApplicationIcon>sun.ico</ApplicationIcon>
 
+    <!-- Carries the package identity the installer grants to the exe. -->
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+
     <!-- Two-part version. MSIX wants four, build.ps1 pads the rest, so this
          number and the one in changelog.md stay the same. -->
-    <Version>1.1</Version>
-    <AssemblyVersion>1.1</AssemblyVersion>
-    <FileVersion>1.1</FileVersion>
-    <!-- Keeps "Product version" in the exe properties at 1.1, without +commit. -->
+    <Version>1.5</Version>
+    <AssemblyVersion>1.5</AssemblyVersion>
+    <FileVersion>1.5</FileVersion>
+    <!-- Keeps "Product version" in the exe properties at 1.5, without +commit. -->
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
 
     <Product>Sunlight-Flow</Product>

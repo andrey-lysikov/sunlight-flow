@@ -2,6 +2,7 @@
 //  SPDX-License-Identifier: Apache-2.0
 
 using System.Diagnostics;
+using System.Numerics;
 using Windows.Devices.Enumeration;
 using Windows.Devices.Lights;
 
@@ -36,6 +37,9 @@ internal sealed class LightEngine : IAsyncDisposable
     // stepping every time a new sample arrives.
     private static readonly TimeSpan LoadSmoothing = TimeSpan.FromSeconds(1.5);
 
+    // Reading more often buys nothing and only keeps writing to the device.
+    private static readonly TimeSpan LoadInterval = TimeSpan.FromSeconds(1);
+
     // How far a pulse dips at its lowest. A third reads as breathing.
     private const double PulseDepth = 1.0 / 3.0;
 
@@ -45,6 +49,10 @@ internal sealed class LightEngine : IAsyncDisposable
         public string Name { get; } = name;
         public Color[] Buffer { get; } = new Color[array.LampCount];
         public int[] Indices { get; } = [.. Enumerable.Range(0, (int)array.LampCount)];
+
+        // Where each lamp sits, for the effects that move across the device.
+        public Vector3[] Positions { get; } = Effects.Normalise(
+            [.. Enumerable.Range(0, (int)array.LampCount).Select(i => array.GetLampInfo(i).Position)]);
     }
 
     private readonly List<Target> _targets = [];
@@ -63,6 +71,11 @@ internal sealed class LightEngine : IAsyncDisposable
     private bool _handoverPending;
     private double _handoverBlend;
 
+    private WindowsEffect _effect = WindowsEffect.Solid(ColorMath.Default);
+    private Color? _loadColor;
+    private double _effectPhase;
+    private double _ceiling = 1.0;
+
     private bool _blood;
     private double _pulsePhase;
     private DateTime _bloodChecked = DateTime.MinValue;
@@ -72,7 +85,7 @@ internal sealed class LightEngine : IAsyncDisposable
     private Task? _loop;
 
     private AppConfig _config = AppConfig.Default;
-    private Location _location = new(55.76, 37.62, "undetermined");
+    private Location _location = new(55.76, 37.62, "undetermined", ByIp: false);
 
     private volatile bool _enabled;
     private bool _toggling;
@@ -97,6 +110,9 @@ internal sealed class LightEngine : IAsyncDisposable
     public double SunElevation => _calc.LastElevation;
     public double SunFactor => _calc.LastSunFactor;
     public bool IsBloodMoon => _blood;
+    public string EffectName => _effect.Type.ToString();
+    public bool IsLoadSyncEnabled => _config.LoadEnabled;
+    public double LoadLevel => _loadLevel;
 
     public int DeviceCount { get { lock (_lock) return _targets.Count; } }
     public int ControlledCount { get { lock (_lock) return _targets.Count(t => t.Array.IsAvailable); } }
@@ -115,6 +131,7 @@ internal sealed class LightEngine : IAsyncDisposable
         if (_enabled) return;
 
         _config = AppConfig.Load();
+        RefreshEffect();
 
         // Read before the lamps are ours, while the registry still describes
         // what Windows is actually showing.
@@ -127,7 +144,7 @@ internal sealed class LightEngine : IAsyncDisposable
         // have arrived in the meantime.
         if (Interlocked.Read(ref _generation) != generation) return;
 
-        _targetLevel = await _calc.TargetAsync(_config, _location);
+        _targetLevel = await _calc.TargetAsync(_config, _location, _ceiling);
 
         lock (_lock) { _toggling = true; _enabled = true; }
         Diagnostics.Log($"control on, goal {_targetLevel:F3}, sun {_calc.LastElevation:F1}°");
@@ -285,7 +302,13 @@ internal sealed class LightEngine : IAsyncDisposable
 
             if (_enabled && now - levelStamp > LevelRefresh)
             {
-                _targetLevel = await _calc.TargetAsync(_config, _location);
+                // Picks up a different effect or brightness chosen in Settings meanwhile.
+                RefreshEffect();
+
+                // At boot the network is often not up yet, so the IP lookup is retried.
+                if (!_location.ByIp) _location = await Geo.ResolveAsync(_config, ct);
+
+                _targetLevel = await _calc.TargetAsync(_config, _location, _ceiling);
                 levelStamp = now;
             }
 
@@ -320,25 +343,41 @@ internal sealed class LightEngine : IAsyncDisposable
                 }
             }
 
-            // With the lamps dark there is nothing to tint, so the load is not
-            // even measured until brightness comes back. During a blood moon the
-            // load is needed anyway, it sets the pulse rate.
+            // Dark lamps have nothing to tint, so the load is not measured. A blood
+            // moon needs it anyway: it sets the pulse rate.
             bool tinting = (_config.LoadEnabled || _blood) && _displayLevel > 0.0005;
 
             // Off the loop thread: enumerating the graphics counters takes long
             // enough on the first pass to stall the ramp visibly.
-            if (tinting && now - loadStamp > TimeSpan.FromSeconds(_config.LoadIntervalSeconds)
-                && (_loadSample?.IsCompleted ?? true))
+            if (tinting && now - loadStamp > LoadInterval && (_loadSample?.IsCompleted ?? true))
             {
                 loadStamp = now;
-                var source = _config.LoadSource;
-                var engines = _config.GpuEngineList;
-                _loadSample = Task.Run(
-                    () => Volatile.Write(ref _loadTarget, _load.Sample(source, engines)), ct);
+                _loadSample = Task.Run(() => Volatile.Write(ref _loadTarget, _load.Sample()), ct);
             }
 
             bool tintMoving = AdvanceLoad(tinting ? Volatile.Read(ref _loadTarget) : 0.0, elapsed);
             moving |= tintMoving;
+
+            var effect = _effect;
+            bool lit = _displayLevel > 0.0005;
+
+            // Gradient and breathing show the load as pace rather than tint.
+            bool tintByLoad = _config.LoadEnabled && effect.TintsUnderLoad;
+            bool paceByLoad = _config.LoadEnabled && !effect.TintsUnderLoad;
+
+            // A moving Windows effect keeps the frames coming while the lamps are lit.
+            if (effect.IsAnimated && lit)
+            {
+                // Breathing already pulses, so load only speeds it up, up to four times.
+                double pace = paceByLoad ? 1 + 3 * _loadLevel : 1;
+                double dt = Math.Clamp(elapsed.TotalSeconds, 0, 1.0);
+                _effectPhase = (_effectPhase + Effects.Rate(effect) * pace * dt) % 1.0;
+                moving = true;
+            }
+
+            // A still effect gets a pulse of its own under load; a blood moon always pulses.
+            bool pulsing = lit && (_blood || (paceByLoad && !effect.IsAnimated && _loadLevel > 0.02));
+            moving |= pulsing;
 
             // Standing at the goal there is nothing to send, so the device is
             // left alone apart from an occasional restatement of the colour.
@@ -347,20 +386,8 @@ internal sealed class LightEngine : IAsyncDisposable
 
             if (due)
             {
-                var color = ColorMath.Parse(_config.Color);
-
                 // The level is perceptual; the LED needs it gamma-encoded.
                 double output = Math.Pow(_displayLevel, _config.Gamma);
-
-                bool tintByColour = _config.LoadEnabled && _config.LoadEffect == LoadEffect.Color;
-                if (tintByColour)
-                    color = ColorMath.Mix(color, ColorMath.Parse(_config.BusyColor), _loadLevel);
-
-                // A total lunar eclipse takes the palette over entirely.
-                if (_blood) color = Color.FromArgb(255, 255, 0, 0);
-
-                bool pulsing = _blood ||
-                    (_config.LoadEnabled && _config.LoadEffect == LoadEffect.Pulse && _loadLevel > 0.02);
 
                 if (pulsing)
                 {
@@ -368,22 +395,34 @@ internal sealed class LightEngine : IAsyncDisposable
                     double rate = Math.Clamp(0.5 + 2.5 * _loadLevel, 0.5, 3.0);
                     _pulsePhase = (_pulsePhase + rate * Frame.TotalSeconds) % 1.0;
 
-                    // Breathing, not blinking: a third off at the very most,
-                    // so the light never drops out entirely.
+                    // Breathing, not blinking: a third off at most, so the light never drops out.
                     double depth = _blood ? PulseDepth : PulseDepth * Math.Clamp(_loadLevel, 0, 1);
                     double wave = 0.5 - 0.5 * Math.Cos(2 * Math.PI * _pulsePhase);
 
                     output *= 1.0 - depth * (1.0 - wave);
-                    moving = true;
                 }
 
                 // Colour crosses over on the same schedule as brightness, so the
                 // handover reads as one movement rather than two.
-                if (_handoverBlend > 0 && _handover is not null)
+                var handover = _handover;
+                double handoverBlend = handover is null ? 0 : _handoverBlend;
+                if (handoverBlend > 0)
                 {
-                    color = ColorMath.Mix(color, _handover.Color, _handoverBlend);
                     _handoverBlend = Math.Max(0, _handoverBlend - Frame.TotalSeconds / ToggleFade.TotalSeconds);
                     moving = true;
+                }
+
+                var loadColor = _loadColor;
+
+                Color Shade(Color c)
+                {
+                    if (tintByLoad && loadColor is { } load) c = ColorMath.Mix(c, load, _loadLevel);
+
+                    // A total lunar eclipse takes the palette over entirely.
+                    if (_blood) c = Color.FromArgb(255, 255, 0, 0);
+
+                    if (handoverBlend > 0) c = ColorMath.Mix(c, handover!.Color, handoverBlend);
+                    return ColorMath.Scale(c, output);
                 }
 
                 lastWrite = DateTime.UtcNow;
@@ -396,7 +435,10 @@ internal sealed class LightEngine : IAsyncDisposable
                     if (!t.Array.IsAvailable) continue;
                     try
                     {
-                        t.Buffer.AsSpan().Fill(ColorMath.Scale(color, output));
+                        Effects.Render(effect, _effectPhase, t.Positions, t.Buffer);
+                        for (int i = 0; i < t.Buffer.Length; i++)
+                            t.Buffer[i] = Shade(t.Buffer[i]);
+
                         t.Array.SetColorsForIndices(t.Buffer, t.Indices);
                         written++;
 
@@ -462,15 +504,31 @@ internal sealed class LightEngine : IAsyncDisposable
         return true;
     }
 
+    private void RefreshEffect()
+    {
+        var effect = Effects.Resolve();
+        var loadColor = Effects.LoadColor(effect);
+
+        // With Dynamic Lighting off in Windows there is no slider to follow.
+        double ceiling = WindowsLighting.ReadBrightness() ?? 1.0;
+
+        if (!effect.Equals(_effect) || !loadColor.Equals(_loadColor) || ceiling != _ceiling)
+            Diagnostics.Log($"effect {effect}, load colour {(loadColor is { } load ? ColorMath.ToHex(load) : "none")}, " +
+                            $"ceiling {ceiling * 100:F0}%");
+
+        _effect = effect;
+        _loadColor = loadColor;
+        _ceiling = ceiling;
+    }
+
     private void Wake()
     {
         try { if (_wake.CurrentCount == 0) _wake.Release(); }
         catch (SemaphoreFullException) { /* already pending */ }
     }
 
-    // Interpolates from where the brightness was to the goal over a fixed span,
-    // so a toggle always takes the same time whatever the configured ceiling is.
-    // Returns true while it is still moving.
+    // Fixed-span ramp to the goal, so a toggle takes the same time whatever the
+    // ceiling. Returns true while still moving.
     private bool Advance(double goal)
     {
         if (Math.Abs(goal - _fadeTo) > 1e-9)

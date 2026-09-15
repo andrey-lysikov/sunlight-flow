@@ -3,18 +3,15 @@
 
 using System.Runtime.InteropServices;
 using System.Text;
-using Microsoft.Win32;
 using Windows.ApplicationModel;
 
 namespace SunlightFlow;
 
-// A package changes its exe path on update, so autostart goes through the
-// manifest StartupTask. Without a package HKCU\Run remains.
+// Autostart goes through the StartupTask in the package manifest, so it survives
+// updates and can be switched off in Task Manager.
 internal static class Startup
 {
-    public const string TaskId = "SunlightFlowAutoStart";
-    private const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
-    private const string RunValue = "Sunlight-Flow";
+    private const string TaskId = "SunlightFlowAutoStart";
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
     private static extern int GetCurrentPackageFullName(ref int length, StringBuilder? name);
@@ -35,19 +32,22 @@ internal static class Startup
     // where Windows hands over background lighting control.
     public static bool HasPackageIdentity => _hasIdentity.Value;
 
-    // Checked on every start: the user may have switched autostart off in Task
-    // Manager, and a package update can reset the task state.
+    // Checked on every start: a package update can reset the task state. Without
+    // identity, as in a build run from bin, there is no task to enable.
     public static async Task EnsureEnabledAsync()
     {
+        if (!HasPackageIdentity) return;
+
         try
         {
-            if (await IsEnabledAsync())
+            var task = await StartupTask.GetAsync(TaskId);
+            if (IsOn(task.State))
             {
                 Diagnostics.Log("autostart already on");
                 return;
             }
 
-            bool now = await SetAsync(true);
+            bool now = IsOn(await task.RequestEnableAsync());
             Diagnostics.Log(now
                 ? "autostart enabled"
                 : "could not enable autostart, most likely blocked in Task Manager");
@@ -58,60 +58,6 @@ internal static class Startup
         }
     }
 
-    public static async Task<bool> IsEnabledAsync()
-    {
-        if (HasPackageIdentity)
-        {
-            try
-            {
-                var task = await StartupTask.GetAsync(TaskId);
-                return task.State is StartupTaskState.Enabled or StartupTaskState.EnabledByPolicy;
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
-        using var key = Registry.CurrentUser.OpenSubKey(RunKey);
-        return key?.GetValue(RunValue) is not null;
-    }
-
-    // Returns the state that actually took effect: Windows may refuse when the
-    // user has disabled autostart for this app.
-    public static async Task<bool> SetAsync(bool enabled)
-    {
-        if (HasPackageIdentity)
-        {
-            try
-            {
-                var task = await StartupTask.GetAsync(TaskId);
-                if (enabled)
-                {
-                    var state = await task.RequestEnableAsync();
-                    return state is StartupTaskState.Enabled or StartupTaskState.EnabledByPolicy;
-                }
-
-                task.Disable();
-                return false;
-            }
-            catch
-            {
-                return await IsEnabledAsync();
-            }
-        }
-
-        using var key = Registry.CurrentUser.CreateSubKey(RunKey, writable: true);
-        if (key is null) return false;
-
-        if (enabled)
-        {
-            string exe = Environment.ProcessPath ?? Application.ExecutablePath;
-            key.SetValue(RunValue, $"\"{exe}\"");
-            return true;
-        }
-
-        key.DeleteValue(RunValue, throwOnMissingValue: false);
-        return false;
-    }
+    private static bool IsOn(StartupTaskState state) =>
+        state is StartupTaskState.Enabled or StartupTaskState.EnabledByPolicy;
 }

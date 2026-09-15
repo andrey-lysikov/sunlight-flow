@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.5
+* Full reload logics, we follow from the WDL, but control lighting and color
+* Update installer
+
 ## 1.1
 * Update sunlight calculation
 * Update installer and updater

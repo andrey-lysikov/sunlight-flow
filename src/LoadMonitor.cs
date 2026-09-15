@@ -7,11 +7,7 @@ using System.Text.RegularExpressions;
 
 namespace SunlightFlow;
 
-internal enum LoadSource { Cpu, Gpu, Max }
-
-internal enum LoadEffect { Color, Pulse }
-
-// Reads processor and graphics load without elevation or extra drivers.
+// Reads the busier of processor and graphics load without elevation or drivers.
 // The CPU goes through kernel32 because counter names are localised.
 internal sealed partial class LoadMonitor : IDisposable
 {
@@ -27,6 +23,9 @@ internal sealed partial class LoadMonitor : IDisposable
     // Instances come and go with processes, so the set is refreshed now and then.
     private static readonly TimeSpan InstanceRefresh = TimeSpan.FromSeconds(30);
 
+    // Video encoding is left out: a streaming tool keeps it busy while the machine idles.
+    private static readonly string[] Engines = ["3D", "Compute"];
+
     private readonly Lock _lock = new();
 
     private long _idle, _kernel, _user;
@@ -34,25 +33,9 @@ internal sealed partial class LoadMonitor : IDisposable
 
     private Dictionary<string, PerformanceCounter[]> _gpu = [];
     private DateTime _gpuStamp = DateTime.MinValue;
-    private string[] _engines = [];
     private bool _gpuBroken;
 
-    public double Sample(LoadSource source, string[] engines)
-    {
-        // Engine filter changes rarely, but the counter set has to follow it.
-        if (!_engines.SequenceEqual(engines))
-        {
-            _engines = engines;
-            _gpuStamp = DateTime.MinValue;
-        }
-
-        return source switch
-        {
-            LoadSource.Cpu => SampleCpu(),
-            LoadSource.Gpu => SampleGpu(),
-            _ => Math.Max(SampleCpu(), SampleGpu())
-        };
-    }
+    public double Sample() => Math.Max(SampleCpu(), SampleGpu());
 
     // First call only records the counters, so it reports zero by design.
     private double SampleCpu()
@@ -150,10 +133,8 @@ internal sealed partial class LoadMonitor : IDisposable
     }
 
     // Engines are numbered per adapter, so Compute_0 has to match Compute.
-    private bool Wanted(string type) =>
-        _engines.Length == 0 ||
-        _engines.Any(e => e.Equals("All", StringComparison.OrdinalIgnoreCase) ||
-                          type.StartsWith(e, StringComparison.OrdinalIgnoreCase));
+    private static bool Wanted(string type) =>
+        Engines.Any(e => type.StartsWith(e, StringComparison.OrdinalIgnoreCase));
 
     public void Dispose()
     {

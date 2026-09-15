@@ -113,8 +113,10 @@ internal sealed class TrayApp : ApplicationContext
 
         if (_engine.IsBloodMoon) body = "blood moon";
 
+        string load = _engine.IsLoadSyncEnabled ? $", load {_engine.LoadLevel * 100:F0}%" : "";
+
         string text = _engine.IsEnabled
-            ? $"Current brightness {_engine.DisplayLevel * 100:F0}%, {body}"
+            ? $"{_engine.EffectName}, brightness {_engine.DisplayLevel * 100:F0}%, {body}{load}"
             : $"Off. {char.ToUpper(body[0])}{body[1..]}";
 
         // The tray tooltip is cut off at 63 characters.

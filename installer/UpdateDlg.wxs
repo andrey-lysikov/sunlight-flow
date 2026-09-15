@@ -1,9 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
 
-  <!-- Shown instead of Welcome, License and InstallDir when an installed copy is
-       found: an update asks nothing, it only confirms. Fonts and the bitmap come
-       from the WixUI_InstallDir set the package already uses. -->
+  <!-- Replaces the welcome and licence dialog when an installed copy is found:
+       an update only confirms. -->
   <Fragment>
     <UI>
       <Dialog Id="UpdateDlg" Width="370" Height="270" Title="!(loc.WelcomeDlg_Title)">

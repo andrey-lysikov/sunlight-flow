@@ -156,25 +156,28 @@ if ($LASTEXITCODE -ne 0) { throw "publish exited with code $LASTEXITCODE" }
 
 Write-Step "[2/5] Staging"
 if (Test-Path $staging) { Remove-Item $staging -Recurse -Force }
-New-Item -ItemType Directory -Path $staging | Out-Null
 
-Copy-Item (Join-Path $publish '*') $staging -Recurse -Force
-New-LogoSet (Join-Path $root 'src\sun.ico') (Join-Path $staging 'Assets')
+$app    = Join-Path $staging 'app'
+$package = Join-Path $staging 'package'
+New-Item -ItemType Directory -Path $app, $package | Out-Null
 
-$manifest = Get-Content (Join-Path $root 'installer\AppxManifest.xml') -Raw
-$manifest = $manifest -replace 'Version="0\.0\.0\.0"', "Version=`"$packageVersion`""
-[IO.File]::WriteAllText((Join-Path $staging 'AppxManifest.xml'), $manifest, [Text.UTF8Encoding]::new($false))
+Copy-Item (Join-Path $publish '*') $app -Recurse -Force
+New-LogoSet (Join-Path $root 'src\sun.ico') (Join-Path $app 'Assets')
 
-$public = Join-Path $staging 'Public'
+$public = Join-Path $app 'Public'
 New-Item -ItemType Directory -Path $public -Force | Out-Null
 Set-Content (Join-Path $public 'readme.txt') `
     'PublicFolder for the com.microsoft.windows.lighting app extension.' -Encoding utf8
 
-Get-ChildItem $staging -Filter *.pdb -Recurse | Remove-Item -Force
+Get-ChildItem $app -Filter *.pdb -Recurse | Remove-Item -Force
+
+$manifest = Get-Content (Join-Path $root 'installer\AppxManifest.xml') -Raw
+$manifest = $manifest -replace 'Version="0\.0\.0\.0"', "Version=`"$packageVersion`""
+[IO.File]::WriteAllText((Join-Path $package 'AppxManifest.xml'), $manifest, [Text.UTF8Encoding]::new($false))
 
 Write-Step "[3/5] MakeAppx pack"
 if (Test-Path $msix) { Remove-Item $msix -Force }
-& $makeappx pack /d $staging /p $msix /o | Out-Null
+& $makeappx pack /d $package /p $msix /nv /o | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "MakeAppx exited with code $LASTEXITCODE" }
 
 Write-Step "[4/5] Signing certificate"
@@ -209,7 +212,7 @@ if ($LASTEXITCODE -ne 0) { throw "SignTool exited with code $LASTEXITCODE" }
 Write-Detail "package $msix"
 
 if (-not $SkipInstaller) {
-    & (Join-Path $root 'installer\installer.ps1') -Version $version -Msix $msix -Certificate $cer
+    & (Join-Path $root 'installer\installer.ps1') -Version $version -Payload $app -Msix $msix -Certificate $cer
 }
 
 Write-Step 'Cleanup'

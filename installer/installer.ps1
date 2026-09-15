@@ -3,6 +3,7 @@
 [CmdletBinding()]
 param(
     [string]$Version = '',
+    [string]$Payload = '',
     [string]$Msix = '',
     [string]$Certificate = ''
 )
@@ -40,9 +41,11 @@ $msi     = Join-Path $outDir 'Sunlight-Flow.msi'
 $icon    = Join-Path $root 'src\sun.ico'
 $license = Join-Path $PSScriptRoot 'License.rtf'
 
+if (-not $Payload)     { $Payload = Join-Path $outDir 'staging\app' }
 if (-not $Msix)        { $Msix = Join-Path $outDir 'Sunlight-Flow.msix' }
 if (-not $Certificate) { $Certificate = Join-Path $outDir 'Sunlight-Flow.cer' }
 
+if (-not (Test-Path (Join-Path $Payload 'Sunlight-Flow.exe'))) { throw "$Payload has no app, run build.ps1 -KeepIntermediate first" }
 if (-not (Test-Path $Msix))        { throw "$Msix is missing, run build.ps1 first" }
 if (-not (Test-Path $Certificate)) { throw "$Certificate is missing, run build.ps1 first" }
 
@@ -81,13 +84,15 @@ if (Test-Path $msi) { Remove-Item $msi -Force }
     -d "Version=$msiVersion" `
     -d "DisplayVersion=$Version" `
     -d "Manufacturer=$manufacturer" `
+    -d "Payload=$Payload" `
     -d "Msix=$Msix" `
     -d "Certificate=$Certificate" `
     -d "Icon=$icon" `
     -d "License=$license" `
     -o $msi `
     (Join-Path $PSScriptRoot 'Package.wxs') `
-    (Join-Path $PSScriptRoot 'UpdateDlg.wxs')
+    (Join-Path $PSScriptRoot 'UpdateDlg.wxs') `
+    (Join-Path $PSScriptRoot 'LicenseDlg.wxs')
 
 if ($LASTEXITCODE -ne 0) { throw "wix build exited with code $LASTEXITCODE" }
 

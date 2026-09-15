@@ -18,7 +18,8 @@ Works through the stock Windows Dynamic Lighting interface.
 - The icon is drawn at runtime: a sun whose rays grow with its height, a moon
   with the current phase after sunset.
 - Location worked out on its own: latitude by IP, longitude by time zone.
-- Optional load reaction: blend towards a busy colour.
+- Colours, effect and brightness follow Settings > Dynamic Lighting.
+- Optional load reaction: blend towards a load colour picked from the Windows effect.
 
 ## Tech
 Written in C#, for Windows 11 or newer with dynamic lighting enabled

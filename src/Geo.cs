@@ -6,7 +6,8 @@ using System.Text.Json;
 
 namespace SunlightFlow;
 
-internal sealed record Location(double Latitude, double Longitude, string Source);
+// ByIp is false while the IP lookup has not succeeded yet, so the latitude is a guess.
+internal sealed record Location(double Latitude, double Longitude, string Source, bool ByIp);
 
 // Latitude comes from the IP address, longitude from the time zone: a person sets
 // the zone, while an IP may point at a VPN exit. If both agree, longitude uses IP too.
@@ -16,7 +17,8 @@ internal static class Geo
 
     private static readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(12) };
 
-    private static string CachePath => Path.Combine(AppConfig.Directory, "location.json");
+    // Kept in memory only: the last latitude found by IP this session.
+    private static double? _lastLatitude;
 
     public static async Task<Location> ResolveAsync(AppConfig cfg, CancellationToken ct = default)
     {
@@ -27,11 +29,10 @@ internal static class Geo
 
         if (byIp is null)
         {
-            var cached = ReadCache();
-            double lat = cached?.Latitude ?? FallbackLatitude;
-            string source = cached is null ? $"{zoneName}, default latitude" : $"{zoneName} and cache";
+            double lat = _lastLatitude ?? FallbackLatitude;
+            string source = _lastLatitude is null ? $"{zoneName}, default latitude" : $"{zoneName}, earlier IP";
 
-            var result = new Location(lat, lonFromTz, source);
+            var result = new Location(lat, lonFromTz, source, ByIp: _lastLatitude is not null);
             Diagnostics.Log($"location: {Describe(result)}");
             return result;
         }
@@ -43,13 +44,14 @@ internal static class Geo
         var final = new Location(
             byIp.Value.Latitude,
             agree ? byIp.Value.Longitude : lonFromTz,
-            agree ? "IP" : $"latitude by IP, longitude by {zoneName}");
+            agree ? "IP" : $"latitude by IP, longitude by {zoneName}",
+            ByIp: true);
 
         if (!agree)
             Diagnostics.Log($"IP gives longitude {byIp.Value.Longitude:F2}, time zone «{zoneName}» " +
                             $"gives {lonFromTz:F2}; the time zone wins");
 
-        WriteCache(final);
+        _lastLatitude = final.Latitude;
         Diagnostics.Log($"location: {Describe(final)}");
         return final;
     }
@@ -129,34 +131,6 @@ internal static class Geo
         {
             Diagnostics.Log($"IP geolocation unavailable: {e.Message}");
             return null;
-        }
-    }
-
-    private static Location? ReadCache()
-    {
-        try
-        {
-            return File.Exists(CachePath)
-                ? JsonSerializer.Deserialize<Location>(File.ReadAllText(CachePath))
-                : null;
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    private static void WriteCache(Location location)
-    {
-        try
-        {
-            Directory.CreateDirectory(AppConfig.Directory);
-            File.WriteAllText(CachePath,
-                JsonSerializer.Serialize(location, new JsonSerializerOptions { WriteIndented = true }));
-        }
-        catch (Exception e)
-        {
-            Diagnostics.Log($"location cache not saved: {e.Message}");
         }
     }
 }

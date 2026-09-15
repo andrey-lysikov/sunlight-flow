@@ -69,9 +69,8 @@ internal sealed class TrayIcons : IDisposable
         }
     }
 
-    // Drawn four times over and scaled down: at sixteen pixels a diagonal ray
-    // otherwise lands on the grid differently from a straight one and looks
-    // thicker.
+    // Drawn four times larger and scaled down, or at 16 px a diagonal ray looks
+    // thicker than a straight one.
     private const int Supersample = 4;
 
     private static Icon Render(Key key, double phase)

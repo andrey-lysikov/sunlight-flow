@@ -3,23 +3,16 @@
 
 namespace SunlightFlow;
 
-// Settings live next to the installed app, in %LOCALAPPDATA%\Sunlight-Flow.
-// No coordinates here: they come from the IP address and the time zone.
+// Colour, effect and brightness come from Settings > Dynamic Lighting; only the
+// sun and load behaviour are configured here, in %LOCALAPPDATA%\Sunlight-Flow.
 internal sealed record AppConfig(
     double SunHighDegrees = 10.0,   // above this sun elevation the lighting is off
     double SunLowDegrees = -6.0,    // below it brightness reaches the ceiling
-    double MaxBrightness = 1.0,     // ceiling the lighting ramps up to at night
-    double Gamma = 2.2,             // the eye perceives brightness non-linearly
     double VisibleFrom = 0.15,      // lower levels are invisible and count as zero
-    bool UseWeather = true,         // cloud cover through Open-Meteo
-    string Color = "#0078FF",
     string TimeZone = "Auto",       // zone the longitude is derived from
-    bool LoadEnabled = false,       // react to processor or graphics load
-    LoadSource LoadSource = LoadSource.Max,
-    LoadEffect LoadEffect = LoadEffect.Color,
-    string BusyColor = "#FF3000",
-    double LoadIntervalSeconds = 1.0,
-    string GpuEngines = "3D, Compute")
+    bool UseWeather = true,         // cloud cover through Open-Meteo
+    double Gamma = 2.2,             // the eye perceives brightness non-linearly
+    bool LoadEnabled = false)       // tint towards the load colour under CPU or GPU load
 {
     public static AppConfig Default => new();
 
@@ -28,8 +21,7 @@ internal sealed record AppConfig(
 
     public static string FilePath => Path.Combine(Directory, "Sunlight-Flow.conf");
 
-    // On first run drops the bundled sample in place, comments and all,
-    // so the parameters explain themselves.
+    // On first run drops the bundled sample in place, so the parameters explain themselves.
     public static AppConfig Load()
     {
         try
@@ -57,34 +49,12 @@ internal sealed record AppConfig(
         return new AppConfig(
             SunHighDegrees: ini.Double("General", "DimAbove", d.SunHighDegrees),
             SunLowDegrees: ini.Double("General", "FullBelow", d.SunLowDegrees),
-            MaxBrightness: ini.Double("General", "BaseBrightness", 100.0) / 100.0,
-            Gamma: ini.Double("General", "Gamma", d.Gamma),
             VisibleFrom: ini.Double("General", "VisibleFrom", d.VisibleFrom * 100.0) / 100.0,
-            UseWeather: ini.Bool("General", "WeatherCloud", d.UseWeather),
-            Color: ini.String("General", "BaseColor", d.Color),
             TimeZone: ini.String("General", "TimeZone", d.TimeZone),
-            LoadEnabled: ini.Bool("DimOnLoad", "Enabled", d.LoadEnabled),
-            LoadSource: ParseSource(ini.String("DimOnLoad", "Source", "Max")),
-            LoadEffect: ParseEffect(ini.String("DimOnLoad", "Effect", "Color")),
-            BusyColor: ini.String("DimOnLoad", "HiLoadColor", d.BusyColor),
-            LoadIntervalSeconds: ini.Double("DimOnLoad", "Interval", d.LoadIntervalSeconds),
-            GpuEngines: ini.String("DimOnLoad", "GpuEngines", d.GpuEngines));
+            UseWeather: ini.Bool("General", "WeatherCloud", d.UseWeather),
+            Gamma: ini.Double("General", "Gamma", d.Gamma),
+            LoadEnabled: ini.Bool("General", "HardwareLoadSync", d.LoadEnabled));
     }
-
-    public string[] GpuEngineList =>
-        [.. GpuEngines.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
-
-    private static LoadSource ParseSource(string value) => value.Trim().ToUpperInvariant() switch
-    {
-        "CPU" => LoadSource.Cpu,
-        "GPU" => LoadSource.Gpu,
-        _ => LoadSource.Max
-    };
-
-    private static LoadEffect ParseEffect(string value) =>
-        value.Trim().Equals("Pulse", StringComparison.OrdinalIgnoreCase)
-            ? LoadEffect.Pulse
-            : LoadEffect.Color;
 
     private static void WriteSample()
     {
@@ -111,15 +81,8 @@ internal sealed record AppConfig(
         {
             SunHighDegrees = high,
             SunLowDegrees = low,
-            MaxBrightness = Math.Clamp(MaxBrightness, 0, 1),
             Gamma = Gamma > 0.1 ? Gamma : 2.2,
-            VisibleFrom = Math.Clamp(VisibleFrom, 0, 1),
-            Color = ColorMath.IsValid(Color) ? Color : ColorMath.DefaultHex,
-            BusyColor = ColorMath.IsValid(BusyColor) ? BusyColor : ColorMath.DefaultBusyHex,
-
-            // Polling faster than once a second buys nothing and keeps writing
-            // to the device for no visible gain.
-            LoadIntervalSeconds = Math.Clamp(LoadIntervalSeconds, 1.0, 60.0)
+            VisibleFrom = Math.Clamp(VisibleFrom, 0, 1)
         };
     }
 }

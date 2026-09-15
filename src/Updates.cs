@@ -17,22 +17,15 @@ internal static class Updates
     private const string LatestApi = $"https://api.github.com/repos/{Repository}/releases/latest";
     private const string ReleasesPage = $"https://github.com/{Repository}/releases/latest";
 
-    private static readonly TimeSpan Interval = TimeSpan.FromDays(1);
-
-    private static string StampPath => Path.Combine(AppConfig.Directory, "update-check");
-
-    public static async Task CheckAsync(bool force = false)
+    // Once per start: the app starts with Windows, so that is about once a day.
+    public static async Task CheckAsync()
     {
-        if (!force && !DueForCheck()) return;
-
         try
         {
             var current = Assembly.GetExecutingAssembly().GetName().Version ?? new Version(0, 0);
 
             var latest = await FetchLatestAsync(Short(current));
             if (latest is null) return;
-
-            WriteStamp();
 
             if (latest.Version <= Normalize(current))
             {
@@ -50,32 +43,6 @@ internal static class Updates
     }
 
     private sealed record Release(Version Version);
-
-    private static bool DueForCheck()
-    {
-        try
-        {
-            if (!File.Exists(StampPath)) return true;
-            return DateTime.UtcNow - File.GetLastWriteTimeUtc(StampPath) > Interval;
-        }
-        catch
-        {
-            return true;
-        }
-    }
-
-    private static void WriteStamp()
-    {
-        try
-        {
-            Directory.CreateDirectory(AppConfig.Directory);
-            File.WriteAllText(StampPath, DateTime.UtcNow.ToString("O"));
-        }
-        catch (Exception e)
-        {
-            Diagnostics.Log($"check timestamp not saved: {e.Message}");
-        }
-    }
 
     private static async Task<Release?> FetchLatestAsync(string current)
     {

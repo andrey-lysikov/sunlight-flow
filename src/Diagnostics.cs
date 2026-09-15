@@ -15,8 +15,6 @@ internal static class Diagnostics
     private static readonly string _path =
         Path.Combine(AppConfig.Directory, "Sunlight-Flow.log");
 
-    public static string Path_ => _path;
-
     public static void Log(string message)
     {
         try

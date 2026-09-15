@@ -34,8 +34,10 @@ internal sealed class Ini
             string key = line[..eq].Trim();
             string value = line[(eq + 1)..].Trim();
 
-            // Drop a trailing comment if the line carries one.
-            int hash = value.IndexOf('#');
+            // Drop a trailing comment if the line carries one. It needs a space
+            // before the hash, otherwise a colour like #0078FF would be cut away.
+            int gap = value.IndexOfAny([' ', '\t']);
+            int hash = gap >= 0 ? value.IndexOf('#', gap) : -1;
             if (hash >= 0) value = value[..hash].TrimEnd();
 
             ini._values[$"{section}.{key}"] = value;
