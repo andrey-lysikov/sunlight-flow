@@ -138,6 +138,7 @@ trap { Remove-Intermediate; break }
 [xml]$csproj = Get-Content $project
 $version = $csproj.Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1
 if (-not $version) { throw "$project has no <Version>" }
+if ($version -notmatch '^\d+\.\d+$') { throw "version '$version' must have two parts, like 1.1" }
 
 $parts = @($version.Split('.'))
 while ($parts.Count -lt 4) { $parts += '0' }

@@ -65,7 +65,7 @@ internal sealed class TrayApp : ApplicationContext
         SystemEvents.SessionSwitch += OnSessionSwitch;
         SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
 
-        Diagnostics.Log($"start, version {typeof(TrayApp).Assembly.GetName().Version}, " +
+        Diagnostics.Log($"start, version {typeof(TrayApp).Assembly.GetName().Version?.ToString(2)}, " +
                         $"package identity = {Startup.HasPackageIdentity}");
 
         _engine.StartLoop();

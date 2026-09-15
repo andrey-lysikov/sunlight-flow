@@ -14,7 +14,7 @@
                  Text="{\WixUI_Font_Bigger}Update [ProductName]" />
         <Control Id="Description" Type="Text" X="135" Y="80" Width="220" Height="90"
                  Transparent="yes" NoPrefix="yes"
-                 Text="[ProductName] is already installed. Setup will update it to version [ProductVersion].&#13;&#10;&#13;&#10;The running app will be closed and started again when the update finishes. Your settings are kept.&#13;&#10;&#13;&#10;Click Update to continue or Cancel to exit." />
+                 Text="[ProductName] is already installed. Setup will update it to version $(DisplayVersion).&#13;&#10;&#13;&#10;The running app will be closed and started again when the update finishes. Your settings are kept.&#13;&#10;&#13;&#10;Click Update to continue or Cancel to exit." />
         <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
         <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17"
                  Disabled="yes" Text="!(loc.WixUIBack)" />

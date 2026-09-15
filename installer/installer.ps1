@@ -53,6 +53,7 @@ if (-not $Version) {
     $Version = $properties.Version | Where-Object { $_ } | Select-Object -First 1
 }
 if (-not $Version) { throw "$project has no <Version>" }
+if ($Version -notmatch '^\d+\.\d+$') { throw "version '$Version' must have two parts, like 1.1" }
 
 $parts = @($Version.Split('.'))
 while ($parts.Count -lt 3) { $parts += '0' }
@@ -78,6 +79,7 @@ if (Test-Path $msi) { Remove-Item $msi -Force }
     -ext WixToolset.UI.wixext `
     -ext WixToolset.Util.wixext `
     -d "Version=$msiVersion" `
+    -d "DisplayVersion=$Version" `
     -d "Manufacturer=$manufacturer" `
     -d "Msix=$Msix" `
     -d "Certificate=$Certificate" `

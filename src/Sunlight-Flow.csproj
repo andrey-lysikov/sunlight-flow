@@ -26,6 +26,8 @@
     <Version>1.1</Version>
     <AssemblyVersion>1.1</AssemblyVersion>
     <FileVersion>1.1</FileVersion>
+    <!-- Keeps "Product version" in the exe properties at 1.1, without +commit. -->
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
 
     <Product>Sunlight-Flow</Product>
     <Company>lysnet.ru</Company>

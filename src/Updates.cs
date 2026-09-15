@@ -27,12 +27,13 @@ internal static class Updates
 
         try
         {
-            var latest = await FetchLatestAsync();
+            var current = Assembly.GetExecutingAssembly().GetName().Version ?? new Version(0, 0);
+
+            var latest = await FetchLatestAsync(Short(current));
             if (latest is null) return;
 
             WriteStamp();
 
-            var current = Assembly.GetExecutingAssembly().GetName().Version ?? new Version(0, 0);
             if (latest.Version <= Normalize(current))
             {
                 Diagnostics.Log($"no updates, {Short(current)} is installed");
@@ -76,10 +77,10 @@ internal static class Updates
         }
     }
 
-    private static async Task<Release?> FetchLatestAsync()
+    private static async Task<Release?> FetchLatestAsync(string current)
     {
         using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
-        http.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("Sunlight-Flow", "1.0"));
+        http.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("Sunlight-Flow", current));
         http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
 
         using var doc = JsonDocument.Parse(await http.GetStringAsync(LatestApi));
