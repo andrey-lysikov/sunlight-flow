@@ -80,6 +80,13 @@ internal sealed class LightEngine : IAsyncDisposable
     private double _pulsePhase;
     private DateTime _bloodChecked = DateTime.MinValue;
 
+    // Set when a lamp joins or comes back, so it gets a frame at once instead of
+    // sitting dark until something moves or the keep-alive comes round.
+    private volatile bool _devicesChanged;
+
+    private volatile Task? _levelRefresh;
+    private DateTime _levelStamp = DateTime.MinValue;
+
     private DeviceWatcher? _watcher;
     private CancellationTokenSource? _cts;
     private Task? _loop;
@@ -145,6 +152,10 @@ internal sealed class LightEngine : IAsyncDisposable
         if (Interlocked.Read(ref _generation) != generation) return;
 
         _targetLevel = await _calc.TargetAsync(_config, _location, _ceiling);
+
+        // Everything was just read, so the loop need not do it all over again
+        // in the middle of the handover.
+        _levelStamp = DateTime.UtcNow;
 
         lock (_lock) { _toggling = true; _enabled = true; }
         Diagnostics.Log($"control on, goal {_targetLevel:F3}, sun {_calc.LastElevation:F1}°");
@@ -255,6 +266,14 @@ internal sealed class LightEngine : IAsyncDisposable
             array.AvailabilityChanged += (a, _) =>
             {
                 Diagnostics.Log($"{info.Name}: IsAvailable -> {a.IsAvailable}");
+
+                // Windows stops drawing the moment the lamps are ours.
+                if (a.IsAvailable)
+                {
+                    _devicesChanged = true;
+                    Wake();
+                }
+
                 StateChanged?.Invoke();
             };
 
@@ -263,6 +282,9 @@ internal sealed class LightEngine : IAsyncDisposable
                 if (_targets.Any(t => t.Array.DeviceId == array.DeviceId)) return;
                 _targets.Add(new Target(array, info.Name));
             }
+
+            _devicesChanged = true;
+            Wake();
 
             Diagnostics.Log(
                 $"found «{info.Name}»: kind={array.LampArrayKind}, lamps={array.LampCount}, " +
@@ -285,7 +307,6 @@ internal sealed class LightEngine : IAsyncDisposable
 
     private async Task LoopAsync(CancellationToken ct)
     {
-        var levelStamp = DateTime.MinValue;
         var logStamp = DateTime.MinValue;
         var lostSince = DateTime.MinValue;
         int written = 0;
@@ -300,24 +321,31 @@ internal sealed class LightEngine : IAsyncDisposable
             var elapsed = now - lastFrame;
             lastFrame = now;
 
-            if (_enabled && now - levelStamp > LevelRefresh)
+            if (_enabled && now - _levelStamp > LevelRefresh && (_levelRefresh?.IsCompleted ?? true))
             {
-                // Picks up a different effect or brightness chosen in Settings meanwhile.
-                RefreshEffect();
-
-                // At boot the network is often not up yet, so the IP lookup is retried.
-                if (!_location.ByIp) _location = await Geo.ResolveAsync(_config, ct);
-
-                _targetLevel = await _calc.TargetAsync(_config, _location, _ceiling);
-                levelStamp = now;
+                _levelStamp = now;
+                _levelRefresh = Task.Run(() => RefreshLevelAsync(ct), ct);
             }
+
+            // Cleared before the snapshot, so a lamp arriving in between is either
+            // in it or raises the flag again for the next pass.
+            bool devicesChanged = _devicesChanged;
+            _devicesChanged = false;
+
+            // One view of the lamps for the whole pass: one that turned up between
+            // the handover check and the write would otherwise get a dark frame first.
+            Target[] live;
+            lock (_lock) live = [.. _targets.Where(t => t.Array.IsAvailable)];
 
             // The ramp may only start once a lamp is actually ours, otherwise it
             // would run out while Windows still owns the device.
-            if (_handoverPending && ControlledCount > 0 && _handover is not null)
+            if (_handoverPending && live.Length > 0 && _handover is not null)
             {
                 _handoverPending = false;
-                _displayLevel = _handover.Brightness;
+                // Windows scales the colour by its slider linearly, while our level is
+                // gamma-encoded on the way out. Undone here, so the first frame puts
+                // out exactly what Windows was showing instead of dipping to its square.
+                _displayLevel = Math.Pow(_handover.Brightness, 1.0 / _config.Gamma);
                 _handoverBlend = 1.0;
 
                 // Out of range on purpose, so the next Advance sees a new goal
@@ -381,7 +409,7 @@ internal sealed class LightEngine : IAsyncDisposable
 
             // Standing at the goal there is nothing to send, so the device is
             // left alone apart from an occasional restatement of the colour.
-            bool due = moving || DateTime.UtcNow - lastWrite > KeepAlive;
+            bool due = moving || devicesChanged || DateTime.UtcNow - lastWrite > KeepAlive;
             var frameDelay = moving ? Frame : IdleTick;
 
             if (due)
@@ -427,10 +455,7 @@ internal sealed class LightEngine : IAsyncDisposable
 
                 lastWrite = DateTime.UtcNow;
 
-                Target[] snapshot;
-                lock (_lock) snapshot = [.. _targets];
-
-                foreach (var t in snapshot)
+                foreach (var t in live)
                 {
                     if (!t.Array.IsAvailable) continue;
                     try
@@ -502,6 +527,26 @@ internal sealed class LightEngine : IAsyncDisposable
         double dt = Math.Clamp(elapsed.TotalSeconds, 0, 1.0);
         _loadLevel += delta * (1.0 - Math.Exp(-dt / LoadSmoothing.TotalSeconds));
         return true;
+    }
+
+    // Off the loop thread: the IP lookup and the weather can take seconds, and
+    // the lamps must not freeze mid-ramp meanwhile.
+    private async Task RefreshLevelAsync(CancellationToken ct)
+    {
+        try
+        {
+            // Picks up a different effect or brightness chosen in Settings meanwhile.
+            RefreshEffect();
+
+            // At boot the network is often not up yet, so the IP lookup is retried.
+            if (!_location.ByIp) _location = await Geo.ResolveAsync(_config, ct);
+
+            _targetLevel = await _calc.TargetAsync(_config, _location, _ceiling);
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            Diagnostics.Log($"level refresh failed: {e.Message}");
+        }
     }
 
     private void RefreshEffect()
